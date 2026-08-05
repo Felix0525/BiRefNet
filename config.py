@@ -14,7 +14,7 @@ class Config():
         # PATH settings
         # Make up your file system as: SYS_HOME_DIR/codes/dis/BiRefNet, SYS_HOME_DIR/datasets/dis/xx, SYS_HOME_DIR/weights/xx
         self.sys_home_dir = [os.path.expanduser('~'), '/workspace'][1]   # Default, custom
-        self.data_root_dir = os.path.join(self.sys_home_dir, 'datasets/dis')
+        self.data_root_dir = '/data/dataset'
 
         # TASK settings
         self.task = ['DIS5K', 'COD', 'HRSOD', 'General', 'General-2K', 'Matting', 'Edge'][6]
