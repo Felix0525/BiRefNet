@@ -5,7 +5,7 @@ import math
 class Config():
     def __init__(self) -> None:
         # Main active settings
-        self.batch_size = 8                                     # Multi-GPU+BF16 training for 76GB / 62GB, without/with compile, on each A100.
+        self.batch_size = 2                                     # Per-GPU batch size. 8 GPUs use a global batch size of 16.
         self.compile = True                                     # 1. PyTorch<=2.0.1 has an inherent CPU memory leak problem; 2.0.1<PyTorch<2.5.0 cannot successfully compile.
         self.mixed_precision = ['no', 'fp16', 'bf16', 'fp8'][2] # 2. FP8 doesn't show acceleration in the torch.compile mode.
         self.SDPA_enabled = True                                # H200x1 + compile==True.  None: 43GB + 14s, math: 43GB + 15s, mem_eff: 35GB + 15s.
@@ -17,7 +17,7 @@ class Config():
         self.data_root_dir = os.path.join(self.sys_home_dir, 'datasets/dis')
 
         # TASK settings
-        self.task = ['DIS5K', 'COD', 'HRSOD', 'General', 'General-2K', 'Matting'][0]
+        self.task = ['DIS5K', 'COD', 'HRSOD', 'General', 'General-2K', 'Matting', 'Edge'][6]
         self.testsets = {
             # Benchmarks
             'DIS5K': ','.join(['DIS-VD', 'DIS-TE1', 'DIS-TE2', 'DIS-TE3', 'DIS-TE4'][:1]),
@@ -27,6 +27,7 @@ class Config():
             'General': ','.join(['DIS-VD', 'TE-P3M-500-NP']),
             'General-2K': ','.join(['DIS-VD', 'TE-P3M-500-NP']),
             'Matting': ','.join(['TE-P3M-500-NP', 'TE-AM-2k']),
+            'Edge': ','.join(['DIS-VD', 'TE-P3M-500-NP']),
         }[self.task]
         datasets_all = '+'.join([ds for ds in (os.listdir(os.path.join(self.data_root_dir, self.task)) if os.path.isdir(os.path.join(self.data_root_dir, self.task)) else []) if ds not in self.testsets.split(',')])
         self.training_set = {
@@ -36,6 +37,7 @@ class Config():
             'General': datasets_all,
             'General-2K': datasets_all,
             'Matting': datasets_all,
+            'Edge': datasets_all,
         }[self.task]
 
         # Data settings
@@ -71,6 +73,7 @@ class Config():
                 'General': -20,
                 'General-2K': -20,
                 'Matting': -10,
+                'Edge': -20,
             }[self.task]
         ][1]    # choose 0 to skip
         self.lr = (1e-4 if 'DIS5K' in self.task else 1e-5) * math.sqrt(self.batch_size / 4)     # DIS needs high lr to converge faster. Adapt the lr linearly
@@ -133,7 +136,7 @@ class Config():
                 'cnt': 5 * 0,
                 'structure': 5 * 0,
             }
-        elif self.task in ['General', 'General-2K']:
+        elif self.task in ['General', 'General-2K', 'Edge']:
             self.lambdas_pix_last = {
                 'bce': 30 * 1,
                 'iou': 0.5 * 1,

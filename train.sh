@@ -8,6 +8,7 @@ case "${task}" in
     'COD') epochs=150 && val_last=50 && step=5 ;;
     'HRSOD') epochs=150 && val_last=50 && step=5 ;;
     'General') epochs=200 && val_last=50 && step=5 ;;
+    'Edge') epochs=200 && val_last=50 && step=5 ;;
     'General-2K') epochs=250 && val_last=30 && step=2 ;;
     'Matting') epochs=150 && val_last=50 && step=5 ;;
 esac
