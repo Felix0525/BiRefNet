@@ -992,7 +992,7 @@ def sort_and_round_scores(task, scores, r=3):
         scores = [sm.round(r), fm['curve'].max().round(r), em['curve'].mean().round(r), mae.round(r),
                   em['curve'].max().round(r), fm['curve'].mean().round(r), wfm.round(r), em['adp'].round(r), fm['adp'].round(r), int(hce.round()),
                   mba.round(r), biou['curve'].max().round(r), biou['curve'].mean().round(r),]
-    elif task in ['General', 'Edge']:
+    elif task in ['General', 'Edge', 'HandWrite', 'Bin']:
         scores = [fm['curve'].max().round(r), wfm.round(r), mae.round(r), sm.round(r), em['curve'].mean().round(r), int(hce.round()),
                   em['curve'].max().round(r), fm['curve'].mean().round(r), em['adp'].round(r), fm['adp'].round(r),
                   mba.round(r), biou['curve'].max().round(r), biou['curve'].mean().round(r),]

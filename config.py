@@ -17,7 +17,7 @@ class Config():
         self.data_root_dir = '/data/dataset'
 
         # TASK settings
-        self.task = ['DIS5K', 'COD', 'HRSOD', 'General', 'General-2K', 'Matting', 'Edge'][6]
+        self.task = ['DIS5K', 'COD', 'HRSOD', 'General', 'General-2K', 'Matting', 'Edge', 'HandWrite', 'Bin'][6]
         self.testsets = {
             # Benchmarks
             'DIS5K': ','.join(['DIS-VD', 'DIS-TE1', 'DIS-TE2', 'DIS-TE3', 'DIS-TE4'][:1]),
@@ -28,6 +28,8 @@ class Config():
             'General-2K': ','.join(['DIS-VD', 'TE-P3M-500-NP']),
             'Matting': ','.join(['TE-P3M-500-NP', 'TE-AM-2k']),
             'Edge': ','.join(['DIS-VD', 'TE-P3M-500-NP']),
+            'HandWrite': ','.join(['DIS-VD', 'TE-P3M-500-NP']),
+            'Bin': ','.join(['DIS-VD', 'TE-P3M-500-NP']),
         }[self.task]
         datasets_all = '+'.join([ds for ds in (os.listdir(os.path.join(self.data_root_dir, self.task)) if os.path.isdir(os.path.join(self.data_root_dir, self.task)) else []) if ds not in self.testsets.split(',')])
         self.training_set = {
@@ -38,10 +40,19 @@ class Config():
             'General-2K': datasets_all,
             'Matting': datasets_all,
             'Edge': datasets_all,
+            'HandWrite': datasets_all,
+            'Bin': datasets_all,
         }[self.task]
 
         # Data settings
-        self.size = (1024, 1024) if self.task not in ['General-2K'] else (2560, 1440)   # wid, hei. Can be overwritten by dynamic_size in training.
+        if self.task == 'Edge':
+            self.size = (1024, 1024)
+        elif self.task == 'HandWrite':
+            self.size = (512, 512)
+        elif self.task == 'Bin':
+            self.size = (512, 512)
+        else:
+            self.size = (1024, 1024) if self.task not in ['General-2K'] else (2560, 1440)   # wid, hei. Can be overwritten by dynamic_size in training.
         self.dynamic_size = [None, ((512-256, 2048+256), (512-256, 2048+256))][0]    # wid, hei. It might cause errors in using compile.
         self.background_color_synthesis = False             # whether to use pure bg color to replace the original backgrounds.
 
@@ -74,6 +85,8 @@ class Config():
                 'General-2K': -20,
                 'Matting': -10,
                 'Edge': -20,
+                'HandWrite': -20,
+                'Bin': -20,
             }[self.task]
         ][1]    # choose 0 to skip
         self.lr = (1e-4 if 'DIS5K' in self.task else 1e-5) * math.sqrt(self.batch_size / 4)     # DIS needs high lr to converge faster. Adapt the lr linearly
@@ -136,7 +149,7 @@ class Config():
                 'cnt': 5 * 0,
                 'structure': 5 * 0,
             }
-        elif self.task in ['General', 'General-2K', 'Edge']:
+        elif self.task in ['General', 'General-2K', 'Edge', 'HandWrite', 'Bin']:
             self.lambdas_pix_last = {
                 'bce': 30 * 1,
                 'iou': 0.5 * 1,
