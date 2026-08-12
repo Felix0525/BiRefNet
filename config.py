@@ -17,7 +17,7 @@ class Config():
         self.data_root_dir = '/data/dataset'
 
         # TASK settings
-        self.task = ['DIS5K', 'COD', 'HRSOD', 'General', 'General-2K', 'Matting', 'Edge', 'HandWrite', 'Bin'][6]
+        self.task = ['DIS5K', 'COD', 'HRSOD', 'General', 'General-2K', 'Matting', 'Edge', 'HandWrite', 'Bin'][7]
         self.testsets = {
             # Benchmarks
             'DIS5K': ','.join(['DIS-VD', 'DIS-TE1', 'DIS-TE2', 'DIS-TE3', 'DIS-TE4'][:1]),
@@ -85,7 +85,8 @@ class Config():
                 'General-2K': -20,
                 'Matting': -10,
                 'Edge': -20,
-                'HandWrite': -20,
+                # Sparse, thin handwriting needs a longer binary-mask refinement phase.
+                'HandWrite': -40,
                 'Bin': -20,
             }[self.task]
         ][1]    # choose 0 to skip
@@ -152,7 +153,9 @@ class Config():
         elif self.task in ['General', 'General-2K', 'Edge', 'HandWrite', 'Bin']:
             self.lambdas_pix_last = {
                 'bce': 30 * 1,
-                'iou': 0.5 * 1,
+                # Give handwriting's small strokes and enclosed gaps more weight than the
+                # generic binary tasks, where a high global IoU can hide these errors.
+                'iou': 0.5 * (2 if self.task == 'HandWrite' else 1),
                 'iou_patch': 0.5 * 0,
                 'mae': 100 * 1,
                 'mse': 30 * 0,

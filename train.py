@@ -164,6 +164,7 @@ class Trainer:
         
         # Others
         self.loss_log = AverageMeter()
+        self.finetune_loss_adjusted = False
 
     def _train_batch(self, batch):
         if args.use_accelerate:
@@ -210,7 +211,7 @@ class Trainer:
         global logger_loss_idx
         self.model.train()
         self.loss_dict = {}
-        if epoch > args.epochs + config.finetune_last_epochs:
+        if epoch > args.epochs + config.finetune_last_epochs and not self.finetune_loss_adjusted:
             if config.task == 'Matting':
                 self.pix_loss.lambdas_pix_last['mae'] *= 1
                 self.pix_loss.lambdas_pix_last['mse'] *= 0.9
@@ -218,8 +219,12 @@ class Trainer:
             else:
                 self.pix_loss.lambdas_pix_last['bce'] *= 0
                 self.pix_loss.lambdas_pix_last['ssim'] *= 1
-                self.pix_loss.lambdas_pix_last['iou'] *= 0.5
+                # Apply the refinement schedule once.  Reapplying it every epoch
+                # effectively removes IoU from the final epochs.
+                self.pix_loss.lambdas_pix_last['iou'] *= 2 if config.task == 'HandWrite' else 0.5
                 self.pix_loss.lambdas_pix_last['mae'] *= 0.9
+            self.finetune_loss_adjusted = True
+            logger.info('Applied final-stage pixel-loss schedule: {}'.format(self.pix_loss.lambdas_pix_last))
 
         for batch_idx, batch in enumerate(self.train_loader):
             # with nullcontext if not args.use_accelerate or accelerator.gradient_accumulation_steps <= 1 else accelerator.accumulate(self.model):
