@@ -191,7 +191,7 @@ class Config():
             'dino_v3_l': 'vit_large_patch16_dinov3.lvd1689m.pth', 'dino_v3_b': 'vit_base_patch16_dinov3.lvd1689m.pth',
             'dino_v3_s_plus': 'vit_small_plus_patch16_dinov3.lvd1689m.pth', 'dino_v3_s': 'vit_small_patch16_dinov3.lvd1689m.pth',
             'swin_v1_l': 'swin_large_patch4_window12_384_22kto1k.pth', 'swin_v1_b': '/data/models/BiRefNet/swin_base_patch4_window12_384_22kto1k.pth',
-            'swin_v1_t': 'swin_tiny_patch4_window7_224_22kto1k_finetune.pth', 'swin_v1_s': 'swin_small_patch4_window7_224_22kto1k_finetune.pth',
+            'swin_v1_t': '/data/models/swin_tiny_patch4_window7_224_22kto1k_finetune.pth', 'swin_v1_s': 'swin_small_patch4_window7_224_22kto1k_finetune.pth',
             'pvt_v2_b5': 'pvt_v2_b5.pth', 'pvt_v2_b2': 'pvt_v2_b2.pth', 'pvt_v2_b1': 'pvt_v2_b1.pth', 'pvt_v2_b0': 'pvt_v2_b0.pth',
         }
         self.weights = {}
