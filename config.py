@@ -17,7 +17,7 @@ class Config():
         self.data_root_dir = '/data/dataset'
 
         # TASK settings
-        self.task = ['DIS5K', 'COD', 'HRSOD', 'General', 'General-2K', 'Matting', 'Edge', 'HandWrite', 'Bin'][8]
+        self.task = ['DIS5K', 'COD', 'HRSOD', 'General', 'General-2K', 'Matting', 'Edge', 'HandWrite', 'Bin'][7]
         self.testsets = {
             # Benchmarks
             'DIS5K': ','.join(['DIS-VD', 'DIS-TE1', 'DIS-TE2', 'DIS-TE3', 'DIS-TE4'][:1]),
@@ -105,7 +105,7 @@ class Config():
 
             'dino_v3_7b', 'dino_v3_h_plus', 'dino_v3_l',
             'dino_v3_b', 'dino_v3_s_plus', 'dino_v3_s',
-        ][3]
+        ][4]
         self.freeze_bb = 'dino_v3' in self.bb
         self.lateral_channels_in_collection = {
             'vgg16': [512, 512, 256, 128], 'vgg16bn': [512, 512, 256, 128], 'resnet50': [2048, 1024, 512, 256],
@@ -190,7 +190,7 @@ class Config():
             'dino_v3_7b': 'vit_7b_patch16_dinov3.lvd1689m.pth', 'dino_v3_h_plus': 'vit_huge_plus_patch16_dinov3.lvd1689m.pth',
             'dino_v3_l': 'vit_large_patch16_dinov3.lvd1689m.pth', 'dino_v3_b': 'vit_base_patch16_dinov3.lvd1689m.pth',
             'dino_v3_s_plus': 'vit_small_plus_patch16_dinov3.lvd1689m.pth', 'dino_v3_s': 'vit_small_patch16_dinov3.lvd1689m.pth',
-            'swin_v1_l': 'swin_large_patch4_window12_384_22kto1k.pth', 'swin_v1_b': 'swin_base_patch4_window12_384_22kto1k.pth',
+            'swin_v1_l': 'swin_large_patch4_window12_384_22kto1k.pth', 'swin_v1_b': '/data/models/BiRefNet/swin_base_patch4_window12_384_22kto1k.pth',
             'swin_v1_t': 'swin_tiny_patch4_window7_224_22kto1k_finetune.pth', 'swin_v1_s': 'swin_small_patch4_window7_224_22kto1k_finetune.pth',
             'pvt_v2_b5': 'pvt_v2_b5.pth', 'pvt_v2_b2': 'pvt_v2_b2.pth', 'pvt_v2_b1': 'pvt_v2_b1.pth', 'pvt_v2_b0': 'pvt_v2_b0.pth',
         }
@@ -204,7 +204,8 @@ class Config():
                 model_name_dir = ''
             else:
                 model_name_dir = ''
-            self.weights[model_name] = os.path.join(self.weights_root_dir, model_name_dir, weights_file)
+            self.weights[model_name] = (weights_file if os.path.isabs(weights_file) else
+                                        os.path.join(self.weights_root_dir, model_name_dir, weights_file))
 
 
         # Callbacks - inactive
