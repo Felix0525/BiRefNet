@@ -221,7 +221,7 @@ class Trainer:
                 self.pix_loss.lambdas_pix_last['ssim'] *= 1
                 # Apply the refinement schedule once.  Reapplying it every epoch
                 # effectively removes IoU from the final epochs.
-                self.pix_loss.lambdas_pix_last['iou'] *= 2 if config.task == 'HandWrite' else 0.5
+                self.pix_loss.lambdas_pix_last['iou'] *= 2 if config.task in ['HandWrite', 'Bin'] else 0.5
                 self.pix_loss.lambdas_pix_last['mae'] *= 0.9
             self.finetune_loss_adjusted = True
             logger.info('Applied final-stage pixel-loss schedule: {}'.format(self.pix_loss.lambdas_pix_last))
