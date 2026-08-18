@@ -5,7 +5,7 @@ import math
 class Config():
     def __init__(self) -> None:
         # Main active settings
-        self.batch_size = 2                                     # Per-GPU batch size. 8 GPUs use a global batch size of 16.
+        self.batch_size = 10                                     # Per-GPU batch size. 8 GPUs use a global batch size of 16.
         self.compile = True                                     # 1. PyTorch<=2.0.1 has an inherent CPU memory leak problem; 2.0.1<PyTorch<2.5.0 cannot successfully compile.
         self.mixed_precision = ['no', 'fp16', 'bf16', 'fp8'][2] # 2. FP8 doesn't show acceleration in the torch.compile mode.
         self.SDPA_enabled = True                                # H200x1 + compile==True.  None: 43GB + 14s, math: 43GB + 15s, mem_eff: 35GB + 15s.
@@ -54,6 +54,11 @@ class Config():
         else:
             self.size = (1024, 1024) if self.task not in ['General-2K'] else (2560, 1440)   # wid, hei. Can be overwritten by dynamic_size in training.
         self.dynamic_size = [None, ((512-256, 2048+256), (512-256, 2048+256))][0]    # wid, hei. It might cause errors in using compile.
+        # HandWrite is deployed as native-resolution 512x512 tiles.  Train on
+        # aligned tiles too, rather than resizing an entire A4/A3 page to 512.
+        self.train_tile_sampling = self.task == 'HandWrite'
+        self.train_tile_positive_probability = 0.70
+        self.train_tile_negative_max_foreground_ratio = 0.001
         self.background_color_synthesis = False             # whether to use pure bg color to replace the original backgrounds.
 
         # Faster-Training settings
@@ -132,7 +137,7 @@ class Config():
         ][0]
 
         # TRAINING settings - inactive
-        self.preproc_methods = ['flip', 'enhance', 'rotate', 'pepper', 'crop'][:4 if not self.background_color_synthesis else 1]
+        self.preproc_methods = ['flip', 'enhance', 'rotate']
         self.optimizer = ['Adam', 'AdamW'][1]
         self.lr_decay_epochs = [1e5]    # Set to negative N to decay the lr in the last N-th epoch.
         self.lr_decay_rate = 0.5

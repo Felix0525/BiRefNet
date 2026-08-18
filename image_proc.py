@@ -138,23 +138,22 @@ def random_crop(image, label):
     return image.crop(random_region), label.crop(random_region)
 
 
-def random_rotate(image, label, angle=15):
-    mode = Image.BICUBIC
-    if random.random() > 0.8:
-        random_angle = np.random.randint(-angle, angle)
-        image = image.rotate(random_angle, mode)
-        label = label.rotate(random_angle, mode)
+def random_rotate(image, label, angle=5, probability=0.2):
+    if random.random() < probability:
+        random_angle = random.uniform(-angle, angle)
+        image = image.rotate(random_angle, Image.BICUBIC, fillcolor=(255, 255, 255))
+        label = label.rotate(random_angle, Image.NEAREST, fillcolor=0)
     return image, label
 
 
 def color_enhance(image):
-    bright_intensity = random.randint(5, 15) / 10.0
+    bright_intensity = random.uniform(0.85, 1.15)
     image = ImageEnhance.Brightness(image).enhance(bright_intensity)
-    contrast_intensity = random.randint(5, 15) / 10.0
+    contrast_intensity = random.uniform(0.85, 1.15)
     image = ImageEnhance.Contrast(image).enhance(contrast_intensity)
-    color_intensity = random.randint(0, 20) / 10.0
+    color_intensity = random.uniform(0.9, 1.1)
     image = ImageEnhance.Color(image).enhance(color_intensity)
-    sharp_intensity = random.randint(0, 30) / 10.0
+    sharp_intensity = random.uniform(0.9, 1.1)
     image = ImageEnhance.Sharpness(image).enhance(sharp_intensity)
     return image
 

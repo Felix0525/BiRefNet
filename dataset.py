@@ -3,7 +3,7 @@ import random
 import numpy as np
 import cv2
 from tqdm import tqdm
-from PIL import Image
+from PIL import Image, ImageOps
 from torch.utils import data
 from torchvision import transforms
 
@@ -61,7 +61,9 @@ class MyData(data.Dataset):
         for p in self.image_paths:
             for ext in valid_extensions:
                 ## 'im' and 'gt' may need modifying
-                p_gt = p.replace('/im/', '/gt/')[:-(len(p.split('.')[-1])+1)] + ext
+                dataset_dir = os.path.dirname(os.path.dirname(p))
+                image_stem = os.path.splitext(os.path.basename(p))[0]
+                p_gt = os.path.join(dataset_dir, 'gt', image_stem + ext)
                 file_exists = False
                 if os.path.exists(p_gt):
                     self.label_paths.append(p_gt)
@@ -81,8 +83,9 @@ class MyData(data.Dataset):
             self.class_labels_loaded = []
             # for image_path, label_path in zip(self.image_paths, self.label_paths):
             for image_path, label_path in tqdm(zip(self.image_paths, self.label_paths), total=len(self.image_paths)):
-                _image = path_to_image(image_path, size=self.data_size, color_type='rgb')
-                _label = path_to_image(label_path, size=self.data_size, color_type='gray')
+                load_size = None if self.is_train and config.train_tile_sampling else self.data_size
+                _image = path_to_image(image_path, size=load_size, color_type='rgb')
+                _label = path_to_image(label_path, size=load_size, color_type='gray')
                 self.images_loaded.append(_image)
                 self.labels_loaded.append(_label)
                 self.class_labels_loaded.append(
@@ -95,12 +98,19 @@ class MyData(data.Dataset):
             label = self.labels_loaded[index]
             class_label = self.class_labels_loaded[index] if self.is_train and config.auxiliary_classification else -1
         else:
-            image = path_to_image(self.image_paths[index], size=self.data_size, color_type='rgb')
-            label = path_to_image(self.label_paths[index], size=self.data_size, color_type='gray')
+            load_size = None if self.is_train and config.train_tile_sampling else self.data_size
+            image = path_to_image(self.image_paths[index], size=load_size, color_type='rgb')
+            label = path_to_image(self.label_paths[index], size=load_size, color_type='gray')
             class_label = self.cls_name2id[self.label_paths[index].split('/')[-1].split('#')[3]] if self.is_train and config.auxiliary_classification else -1
 
         # loading image and label
         if self.is_train:
+            if config.train_tile_sampling:
+                image, label = sample_handwrite_tile(
+                    image, label, config.size,
+                    positive_probability=config.train_tile_positive_probability,
+                    negative_max_foreground_ratio=config.train_tile_negative_max_foreground_ratio,
+                )
             if config.background_color_synthesis:
                 image.putalpha(label)
                 array_image = np.array(image)
@@ -149,6 +159,54 @@ class MyData(data.Dataset):
 
     def __len__(self):
         return len(self.image_paths)
+
+
+def _pad_to_tile_size(image, label, tile_size):
+    """Pad an aligned image/mask pair at the right/bottom to the tile size."""
+    if image.size != label.size:
+        raise ValueError('Image and label sizes differ: {} != {}'.format(image.size, label.size))
+    tile_width, tile_height = tile_size
+    pad_right = max(0, tile_width - image.width)
+    pad_bottom = max(0, tile_height - image.height)
+    if not (pad_right or pad_bottom):
+        return image, label
+    image = ImageOps.expand(image, border=(0, 0, pad_right, pad_bottom), fill=(255, 255, 255))
+    label = ImageOps.expand(label, border=(0, 0, pad_right, pad_bottom), fill=0)
+    return image, label
+
+
+def _random_tile_origin(width, height, tile_width, tile_height):
+    return random.randint(0, width - tile_width), random.randint(0, height - tile_height)
+
+
+def sample_handwrite_tile(image, label, tile_size, positive_probability=0.70,
+                          negative_max_foreground_ratio=0.001, max_attempts=8):
+    """Sample an aligned native-resolution HandWrite tile.
+
+    Positive tiles are anchored on a labelled handwriting pixel.  Negative
+    tiles are preferentially selected from locations with almost no foreground.
+    """
+    image, label = _pad_to_tile_size(image, label, tile_size)
+    tile_width, tile_height = tile_size
+    foreground = np.asarray(label) > 127
+    foreground_yx = np.argwhere(foreground)
+    wants_positive = len(foreground_yx) and random.random() < positive_probability
+
+    if wants_positive:
+        y, x = foreground_yx[random.randrange(len(foreground_yx))]
+        left_min, left_max = max(0, x - tile_width + 1), min(x, image.width - tile_width)
+        top_min, top_max = max(0, y - tile_height + 1), min(y, image.height - tile_height)
+        left, top = random.randint(left_min, left_max), random.randint(top_min, top_max)
+    else:
+        left, top = _random_tile_origin(image.width, image.height, tile_width, tile_height)
+        for _ in range(max_attempts):
+            candidate = foreground[top:top + tile_height, left:left + tile_width]
+            if candidate.mean() <= negative_max_foreground_ratio:
+                break
+            left, top = _random_tile_origin(image.width, image.height, tile_width, tile_height)
+
+    box = (left, top, left + tile_width, top + tile_height)
+    return image.crop(box), label.crop(box)
 
 
 def custom_collate_fn(batch):
