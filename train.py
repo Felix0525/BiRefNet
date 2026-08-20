@@ -160,6 +160,12 @@ def init_models_optimizers(epochs, to_be_distributed):
             epoch_st = int(args.resume.rstrip('.pth').split('epoch_')[-1]) + 1
         else:
             logger.info("=> no checkpoint found at '{}'".format(args.resume))
+    if config.task == 'HandWrite' and config.train_batch_size == 1:
+        world_size = accelerator.num_processes if args.use_accelerate else (torch.distributed.get_world_size() if to_be_distributed else 1)
+        if world_size <= 1:
+            raise ValueError('HandWrite train_batch_size=1 requires multi-GPU SyncBatchNorm.')
+        model = nn.SyncBatchNorm.convert_sync_batchnorm(model)
+        logger.info('Converted BatchNorm to SyncBatchNorm across {} ranks.'.format(world_size))
     if not args.use_accelerate:
         if to_be_distributed:
             model = model.to(device)
