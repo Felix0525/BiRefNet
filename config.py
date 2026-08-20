@@ -58,6 +58,8 @@ class Config():
         # complete (width, height) pair; do not use independent random H/W.
         self.train_size_buckets = [(2176, 1536), (1088, 1536)] if self.task == 'HandWrite' else None
         self.train_tile_sampling = False
+        if self.task == 'HandWrite':
+            self.batch_size = 1
         self.train_tile_positive_probability = 0.70
         self.train_tile_negative_max_foreground_ratio = 0.001
         self.background_color_synthesis = False             # whether to use pure bg color to replace the original backgrounds.
