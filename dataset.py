@@ -143,7 +143,7 @@ class MyData(data.Dataset):
 
         # At present, we use fixed sizes in inference, instead of consistent dynamic size with training.
         if self.is_train:
-            if config.dynamic_size is None:
+            if config.dynamic_size is None and not config.train_size_buckets:
                 image, label = self.transform_image(image), self.transform_label(label)
         else:
             size_div_32 = (int(image.size[0] // 32 * 32), int(image.size[1] // 32 * 32))
@@ -210,7 +210,9 @@ def sample_handwrite_tile(image, label, tile_size, positive_probability=0.70,
 
 
 def custom_collate_fn(batch):
-    if config.dynamic_size:
+    if config.train_size_buckets:
+        data_size = random.choice(config.train_size_buckets)
+    elif config.dynamic_size:
         dynamic_size = tuple(sorted(config.dynamic_size))
         dynamic_size_batch = (random.randint(dynamic_size[0][0], dynamic_size[0][1]) // 32 * 32, random.randint(dynamic_size[1][0], dynamic_size[1][1]) // 32 * 32) # select a value randomly in the range of [dynamic_size[0/1][0], dynamic_size[0/1][1]].
         data_size = dynamic_size_batch
@@ -223,7 +225,7 @@ def custom_collate_fn(batch):
         transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
     ])
     transform_label = transforms.Compose([
-        transforms.Resize(data_size[::-1]),
+        transforms.Resize(data_size[::-1], interpolation=transforms.InterpolationMode.NEAREST),
         transforms.ToTensor(),
     ])
     for image, label, class_label in batch:
