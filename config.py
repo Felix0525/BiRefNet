@@ -5,7 +5,7 @@ import math
 class Config():
     def __init__(self) -> None:
         # Main active settings
-        self.batch_size = 2                                     # Per-GPU batch size. 8 GPUs use a global batch size of 16.
+        self.batch_size = 1                                     # Per-GPU batch size. 8 GPUs use a global batch size of 16.
         self.compile = True                                     # 1. PyTorch<=2.0.1 has an inherent CPU memory leak problem; 2.0.1<PyTorch<2.5.0 cannot successfully compile.
         self.mixed_precision = ['no', 'fp16', 'bf16', 'fp8'][2] # 2. FP8 doesn't show acceleration in the torch.compile mode.
         self.SDPA_enabled = True                                # H200x1 + compile==True.  None: 43GB + 14s, math: 43GB + 15s, mem_eff: 35GB + 15s.
@@ -56,7 +56,7 @@ class Config():
         self.dynamic_size = [None, ((512-256, 2048+256), (512-256, 2048+256))][0]    # wid, hei. It might cause errors in using compile.
         # HandWrite trains on two deployed page layouts.  Each batch selects one
         # complete (width, height) pair; do not use independent random H/W.
-        self.train_size_buckets = [(1856, 1312), (928, 1312)] if self.task == 'HandWrite' else None
+        self.train_size_buckets = [(2176, 1536), (1088, 1536)] if self.task == 'HandWrite' else None
         self.train_tile_sampling = False
         self.train_tile_positive_probability = 0.70
         self.train_tile_negative_max_foreground_ratio = 0.001
