@@ -56,7 +56,7 @@ class Config():
         self.dynamic_size = [None, ((512-256, 2048+256), (512-256, 2048+256))][0]    # wid, hei. It might cause errors in using compile.
         # HandWrite trains on two deployed page layouts.  Each batch selects one
         # complete (width, height) pair; do not use independent random H/W.
-        self.train_size_buckets = [(2176, 1536), (1088, 1536)] if self.task == 'HandWrite' else None
+        self.train_size_buckets = [(1984, 1408), (992, 1408)] if self.task == 'HandWrite' else None
         self.train_tile_sampling = False
         self.train_tile_positive_probability = 0.70
         self.train_tile_negative_max_foreground_ratio = 0.001

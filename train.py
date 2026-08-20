@@ -15,6 +15,7 @@ from models.birefnet import BiRefNet
 from utils import Logger, AverageMeter, set_seed, check_state_dict
 
 from torch.utils.data.distributed import DistributedSampler
+from torch.utils.data import BatchSampler, RandomSampler
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.distributed import init_process_group, destroy_process_group
 
@@ -80,6 +81,27 @@ print('batch size:', config.batch_size)
 
 from dataset import custom_collate_fn
 
+
+class HandWriteBucketBatchSampler(BatchSampler):
+    def __init__(self, dataset, batch_size):
+        self.dataset = dataset
+        self.batch_size = batch_size
+        self.buckets = {}
+        for index, size in enumerate(dataset.train_bucket_sizes):
+            self.buckets.setdefault(size, []).append(index)
+
+    def __iter__(self):
+        batches = []
+        for indices in self.buckets.values():
+            order = torch.randperm(len(indices)).tolist()
+            batches.extend([[indices[i] for i in order[start:start + self.batch_size]] for start in range(0, len(order) - self.batch_size + 1, self.batch_size)])
+        order = torch.randperm(len(batches)).tolist()
+        for i in order:
+            yield batches[i]
+
+    def __len__(self):
+        return sum(len(indices) // self.batch_size for indices in self.buckets.values())
+
 def prepare_dataloader(dataset: torch.utils.data.Dataset, batch_size: int, to_be_distributed=False, is_train=True):
     # Prepare dataloaders
     if to_be_distributed:
@@ -96,10 +118,13 @@ def prepare_dataloader(dataset: torch.utils.data.Dataset, batch_size: int, to_be
 
 def init_data_loaders(to_be_distributed):
     # Prepare datasets
-    train_loader = prepare_dataloader(
-        MyData(datasets=config.training_set, data_size=None if (config.dynamic_size or config.train_size_buckets) else config.size, is_train=True),
-        config.batch_size, to_be_distributed=to_be_distributed, is_train=True
-    )
+    train_dataset = MyData(datasets=config.training_set, data_size=None if (config.dynamic_size or config.train_size_buckets) else config.size, is_train=True)
+    if config.train_size_buckets:
+        if to_be_distributed:
+            raise ValueError('HandWrite size buckets currently require single-GPU training.')
+        train_loader = torch.utils.data.DataLoader(train_dataset, batch_sampler=HandWriteBucketBatchSampler(train_dataset, config.batch_size), num_workers=min(config.num_workers, config.batch_size), pin_memory=True, collate_fn=custom_collate_fn)
+    else:
+        train_loader = prepare_dataloader(train_dataset, config.batch_size, to_be_distributed=to_be_distributed, is_train=True)
     print(len(train_loader), "batches of train dataloader {} have been created.".format(config.training_set))
     return train_loader
 
