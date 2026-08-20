@@ -59,7 +59,12 @@ class Config():
         self.train_size_buckets = [(2176, 1536), (1088, 1536)] if self.task == 'HandWrite' else None
         self.train_tile_sampling = False
         if self.task == 'HandWrite':
-            self.batch_size = 1
+            # Keep BN modules present to load the General checkpoint.  Actual
+            # per-GPU training batch is configured independently below.
+            self.batch_size = 2
+            self.train_batch_size = 1
+        else:
+            self.train_batch_size = self.batch_size
         self.train_tile_positive_probability = 0.70
         self.train_tile_negative_max_foreground_ratio = 0.001
         self.background_color_synthesis = False             # whether to use pure bg color to replace the original backgrounds.
@@ -98,8 +103,8 @@ class Config():
                 'Bin': -40,
             }[self.task]
         ][1]    # choose 0 to skip
-        self.lr = (1e-4 if 'DIS5K' in self.task else 1e-5) * math.sqrt(self.batch_size / 4)     # DIS needs high lr to converge faster. Adapt the lr linearly
-        self.num_workers = max(4, self.batch_size)          # will be decreased to min(it, batch_size) at the initialization of the data_loader
+        self.lr = (1e-4 if 'DIS5K' in self.task else 1e-5) * math.sqrt(self.train_batch_size / 4)
+        self.num_workers = max(4, self.train_batch_size)
 
         # Backbone settings
         self.bb = [

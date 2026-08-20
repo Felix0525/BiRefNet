@@ -77,7 +77,7 @@ logger_loss_idx = 1
 #     config.compile = False
 logger.info("datasets: load_all={}, compile={}.".format(config.load_all, config.compile))
 logger.info("Other hyperparameters:"); logger.info(args)
-print('batch size:', config.batch_size)
+print('train batch size:', config.train_batch_size)
 
 from dataset import custom_collate_fn
 
@@ -136,9 +136,9 @@ def init_data_loaders(to_be_distributed):
     if config.train_size_buckets:
         world_size = torch.distributed.get_world_size() if to_be_distributed else 1
         rank = torch.distributed.get_rank() if to_be_distributed else 0
-        train_loader = torch.utils.data.DataLoader(train_dataset, batch_sampler=HandWriteBucketBatchSampler(train_dataset, config.batch_size, world_size, rank), num_workers=min(config.num_workers, config.batch_size), pin_memory=True, collate_fn=custom_collate_fn)
+        train_loader = torch.utils.data.DataLoader(train_dataset, batch_sampler=HandWriteBucketBatchSampler(train_dataset, config.train_batch_size, world_size, rank), num_workers=min(config.num_workers, config.train_batch_size), pin_memory=True, collate_fn=custom_collate_fn)
     else:
-        train_loader = prepare_dataloader(train_dataset, config.batch_size, to_be_distributed=to_be_distributed, is_train=True)
+        train_loader = prepare_dataloader(train_dataset, config.train_batch_size, to_be_distributed=to_be_distributed, is_train=True)
     print(len(train_loader), "batches of train dataloader {} have been created.".format(config.training_set))
     return train_loader
 
