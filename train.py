@@ -86,6 +86,10 @@ class HandWriteBucketBatchSampler(BatchSampler):
     def __init__(self, dataset, batch_size, num_replicas=1, rank=0):
         self.dataset = dataset
         self.batch_size = batch_size
+        self.drop_last = True
+        # Kept for DataLoader/Accelerate BatchSampler compatibility.  Actual
+        # index selection is performed below to keep each DDP batch homogeneous.
+        self.sampler = RandomSampler(dataset)
         self.num_replicas = num_replicas
         self.rank = rank
         self.epoch = 0
