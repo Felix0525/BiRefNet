@@ -50,7 +50,7 @@ class Config():
         elif self.task == 'HandWrite':
             # Fixed HandWrite training/inference tile: (width, height).
             # A 1754x2480 full page is split into two 1754x1240 halves upstream.
-            self.size = (1240, 1754)
+            self.size = (1248, 1760)
         elif self.task == 'Bin':
             self.size = (512, 512)
         else:
