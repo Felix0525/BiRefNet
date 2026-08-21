@@ -15,7 +15,6 @@ from models.birefnet import BiRefNet
 from utils import Logger, AverageMeter, set_seed, check_state_dict
 
 from torch.utils.data.distributed import DistributedSampler
-from torch.utils.data import BatchSampler, RandomSampler
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.distributed import init_process_group, destroy_process_group
 
@@ -82,63 +81,24 @@ print('train batch size:', config.train_batch_size)
 from dataset import custom_collate_fn
 
 
-class HandWriteBucketBatchSampler(BatchSampler):
-    def __init__(self, dataset, batch_size, num_replicas=1, rank=0):
-        self.dataset = dataset
-        self.batch_size = batch_size
-        self.drop_last = True
-        # Kept for DataLoader/Accelerate BatchSampler compatibility.  Actual
-        # index selection is performed below to keep each DDP batch homogeneous.
-        self.sampler = RandomSampler(dataset)
-        self.num_replicas = num_replicas
-        self.rank = rank
-        self.epoch = 0
-        self.buckets = {}
-        for index, size in enumerate(dataset.train_bucket_sizes):
-            self.buckets.setdefault(size, []).append(index)
-
-    def __iter__(self):
-        batches = []
-        generator = torch.Generator().manual_seed(20260820 + self.epoch)
-        global_batch_size = self.batch_size * self.num_replicas
-        for size in sorted(self.buckets):
-            indices = self.buckets[size]
-            order = torch.randperm(len(indices), generator=generator).tolist()
-            usable = len(order) // global_batch_size * global_batch_size
-            for start in range(0, usable, global_batch_size):
-                rank_start = start + self.rank * self.batch_size
-                batches.append([indices[i] for i in order[rank_start:rank_start + self.batch_size]])
-        order = torch.randperm(len(batches), generator=generator).tolist()
-        self.epoch += 1
-        for i in order:
-            yield batches[i]
-
-    def __len__(self):
-        return sum(len(indices) // (self.batch_size * self.num_replicas) for indices in self.buckets.values())
-
 def prepare_dataloader(dataset: torch.utils.data.Dataset, batch_size: int, to_be_distributed=False, is_train=True):
     # Prepare dataloaders
     if to_be_distributed:
         return torch.utils.data.DataLoader(
             dataset=dataset, batch_size=batch_size, num_workers=min(config.num_workers, batch_size), pin_memory=True,
-            shuffle=False, sampler=DistributedSampler(dataset), drop_last=True, collate_fn=custom_collate_fn if is_train and (config.dynamic_size or config.train_size_buckets) else None
+            shuffle=False, sampler=DistributedSampler(dataset), drop_last=True, collate_fn=custom_collate_fn if is_train and config.dynamic_size else None
         )
     else:
         return torch.utils.data.DataLoader(
             dataset=dataset, batch_size=batch_size, num_workers=min(config.num_workers, batch_size), pin_memory=True,
-            shuffle=is_train, sampler=None, drop_last=True, collate_fn=custom_collate_fn if is_train and (config.dynamic_size or config.train_size_buckets) else None
+            shuffle=is_train, sampler=None, drop_last=True, collate_fn=custom_collate_fn if is_train and config.dynamic_size else None
         )
 
 
 def init_data_loaders(to_be_distributed):
     # Prepare datasets
-    train_dataset = MyData(datasets=config.training_set, data_size=None if (config.dynamic_size or config.train_size_buckets) else config.size, is_train=True)
-    if config.train_size_buckets:
-        world_size = torch.distributed.get_world_size() if to_be_distributed else 1
-        rank = torch.distributed.get_rank() if to_be_distributed else 0
-        train_loader = torch.utils.data.DataLoader(train_dataset, batch_sampler=HandWriteBucketBatchSampler(train_dataset, config.train_batch_size, world_size, rank), num_workers=min(config.num_workers, config.train_batch_size), pin_memory=True, collate_fn=custom_collate_fn)
-    else:
-        train_loader = prepare_dataloader(train_dataset, config.train_batch_size, to_be_distributed=to_be_distributed, is_train=True)
+    train_dataset = MyData(datasets=config.training_set, data_size=None if config.dynamic_size else config.size, is_train=True)
+    train_loader = prepare_dataloader(train_dataset, config.train_batch_size, to_be_distributed=to_be_distributed, is_train=True)
     print(len(train_loader), "batches of train dataloader {} have been created.".format(config.training_set))
     return train_loader
 
@@ -160,12 +120,6 @@ def init_models_optimizers(epochs, to_be_distributed):
             epoch_st = int(args.resume.rstrip('.pth').split('epoch_')[-1]) + 1
         else:
             logger.info("=> no checkpoint found at '{}'".format(args.resume))
-    if config.task == 'HandWrite' and config.train_batch_size == 1:
-        world_size = accelerator.num_processes if args.use_accelerate else (torch.distributed.get_world_size() if to_be_distributed else 1)
-        if world_size <= 1:
-            raise ValueError('HandWrite train_batch_size=1 requires multi-GPU SyncBatchNorm.')
-        model = nn.SyncBatchNorm.convert_sync_batchnorm(model)
-        logger.info('Converted BatchNorm to SyncBatchNorm across {} ranks.'.format(world_size))
     if not args.use_accelerate:
         if to_be_distributed:
             model = model.to(device)

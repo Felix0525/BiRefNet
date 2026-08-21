@@ -78,15 +78,6 @@ class MyData(data.Dataset):
             print('Path diff:', set_image_paths - set_label_paths)
             raise ValueError(f"There are different numbers of images ({len(self.label_paths)}) and labels ({len(self.image_paths)})")
 
-        self.train_bucket_sizes = None
-        if self.is_train and config.train_size_buckets:
-            self.train_bucket_sizes = []
-            for image_path in self.image_paths:
-                with Image.open(image_path) as probe:
-                    width, height = probe.size
-                # Square samples were prepared on the landscape canvas.
-                self.train_bucket_sizes.append((1088, 1536) if height > width else (2176, 1536))
-
         if self.load_all:
             self.images_loaded, self.labels_loaded = [], []
             self.class_labels_loaded = []
@@ -94,7 +85,7 @@ class MyData(data.Dataset):
             for image_path, label_path in tqdm(zip(self.image_paths, self.label_paths), total=len(self.image_paths)):
                 load_size = None if self.is_train and config.train_tile_sampling else self.data_size
                 _image = path_to_image(image_path, size=load_size, color_type='rgb')
-                _label = path_to_image(label_path, size=load_size, color_type='gray')
+                _label = path_to_image(label_path, size=load_size, color_type='gray', interpolation=cv2.INTER_NEAREST)
                 self.images_loaded.append(_image)
                 self.labels_loaded.append(_label)
                 self.class_labels_loaded.append(
@@ -109,7 +100,7 @@ class MyData(data.Dataset):
         else:
             load_size = None if self.is_train and config.train_tile_sampling else self.data_size
             image = path_to_image(self.image_paths[index], size=load_size, color_type='rgb')
-            label = path_to_image(self.label_paths[index], size=load_size, color_type='gray')
+            label = path_to_image(self.label_paths[index], size=load_size, color_type='gray', interpolation=cv2.INTER_NEAREST)
             class_label = self.cls_name2id[self.label_paths[index].split('/')[-1].split('#')[3]] if self.is_train and config.auxiliary_classification else -1
 
         # loading image and label
@@ -152,7 +143,7 @@ class MyData(data.Dataset):
 
         # At present, we use fixed sizes in inference, instead of consistent dynamic size with training.
         if self.is_train:
-            if config.dynamic_size is None and not config.train_size_buckets:
+            if config.dynamic_size is None:
                 image, label = self.transform_image(image), self.transform_label(label)
         else:
             size_div_32 = (int(image.size[0] // 32 * 32), int(image.size[1] // 32 * 32))
@@ -162,7 +153,7 @@ class MyData(data.Dataset):
             image, label = self.transform_image(image), self.transform_label(label)
 
         if self.is_train:
-            return image, label, class_label, self.train_bucket_sizes[index] if self.train_bucket_sizes else None
+            return image, label, class_label
         else:
             return image, label, self.label_paths[index]
 
@@ -219,12 +210,7 @@ def sample_handwrite_tile(image, label, tile_size, positive_probability=0.70,
 
 
 def custom_collate_fn(batch):
-    if config.train_size_buckets:
-        bucket_sizes = {item[3] for item in batch}
-        if len(bucket_sizes) != 1:
-            raise ValueError(f"A HandWrite batch must contain one size bucket, got {bucket_sizes}")
-        data_size = bucket_sizes.pop()
-    elif config.dynamic_size:
+    if config.dynamic_size:
         dynamic_size = tuple(sorted(config.dynamic_size))
         dynamic_size_batch = (random.randint(dynamic_size[0][0], dynamic_size[0][1]) // 32 * 32, random.randint(dynamic_size[1][0], dynamic_size[1][1]) // 32 * 32) # select a value randomly in the range of [dynamic_size[0/1][0], dynamic_size[0/1][1]].
         data_size = dynamic_size_batch
@@ -240,6 +226,6 @@ def custom_collate_fn(batch):
         transforms.Resize(data_size[::-1], interpolation=transforms.InterpolationMode.NEAREST),
         transforms.ToTensor(),
     ])
-    for image, label, class_label, _ in batch:
+    for image, label, class_label in batch:
         new_batch.append((transform_image(image), transform_label(label), class_label))
     return data._utils.collate.default_collate(new_batch)
