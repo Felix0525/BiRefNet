@@ -14,6 +14,10 @@ from utils import path_to_image
 
 Image.MAX_IMAGE_PIXELS = None       # remove DecompressionBombWarning
 config = Config()
+# When True, training images are resized inside custom_collate_fn (per batch),
+# so __getitem__ must keep them as PIL and skip the ToTensor there. This covers
+# both the dynamic_size path and the Edge two-fixed-sizes path.
+_collate_resizes = bool(config.dynamic_size) or (config.task == 'Edge' and getattr(config, 'edge_sizes', None))
 _class_labels_TR_sorted = (
     'Airplane, Ant, Antenna, Archery, Axe, BabyCarriage, Bag, BalanceBeam, Balcony, Balloon, Basket, BasketballHoop, Beatle, Bed, Bee, Bench, Bicycle, '
     'BicycleFrame, BicycleStand, Boat, Bonsai, BoomLift, Bridge, BunkBed, Butterfly, Button, Cable, CableLift, Cage, Camcorder, Cannon, Canoe, Car, '
@@ -133,7 +137,7 @@ class MyData(data.Dataset):
 
         # At present, we use fixed sizes in inference, instead of consistent dynamic size with training.
         if self.is_train:
-            if config.dynamic_size is None:
+            if not _collate_resizes:
                 image, label = self.transform_image(image), self.transform_label(label)
         else:
             size_div_32 = (int(image.size[0] // 32 * 32), int(image.size[1] // 32 * 32))
@@ -152,7 +156,15 @@ class MyData(data.Dataset):
 
 
 def custom_collate_fn(batch):
-    if config.dynamic_size:
+    # Edge inputs are mostly 4:3 / 3:4. Use two fixed aspect-ratio-preserving
+    # sizes and pick one per batch by `edge_landscape_prob` (a whole batch must
+    # share one size to be stacked).
+    if config.task == 'Edge' and getattr(config, 'edge_sizes', None):
+        if random.random() < config.edge_landscape_prob:
+            data_size = config.edge_sizes['landscape']
+        else:
+            data_size = config.edge_sizes['portrait']
+    elif config.dynamic_size:
         dynamic_size = tuple(sorted(config.dynamic_size))
         dynamic_size_batch = (random.randint(dynamic_size[0][0], dynamic_size[0][1]) // 32 * 32, random.randint(dynamic_size[1][0], dynamic_size[1][1]) // 32 * 32) # select a value randomly in the range of [dynamic_size[0/1][0], dynamic_size[0/1][1]].
         data_size = dynamic_size_batch

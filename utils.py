@@ -8,22 +8,6 @@ import cv2
 from PIL import Image
 
 
-def size_by_long_side(orig_size, long_side, align=32):
-    # Scale so the longer side equals `long_side`, keep the aspect ratio, and
-    # align both sides to `align` (32) as required by the model's downsampling.
-    # `orig_size` and the return value are both (width, height).
-    w, h = orig_size
-    if w >= h:
-        new_w = long_side
-        new_h = max(align, round(h * long_side / w))
-    else:
-        new_h = long_side
-        new_w = max(align, round(w * long_side / h))
-    new_w = max(align, int(round(new_w / align)) * align)
-    new_h = max(align, int(round(new_h / align)) * align)
-    return (new_w, new_h)
-
-
 def path_to_image(path, size=(1024, 1024), color_type=['rgb', 'gray'][0]):
     if color_type.lower() == 'rgb':
         image = cv2.imread(path)
@@ -33,11 +17,13 @@ def path_to_image(path, size=(1024, 1024), color_type=['rgb', 'gray'][0]):
         print('Select the color_type to return, either to RGB or gray image.')
         return
     if size:
-        # An int `size` means "scale the longer side to this value while keeping
-        # the aspect ratio"; a (w, h) tuple keeps the original fixed-size behavior.
-        if isinstance(size, int):
+        # 'edge_auto' picks one of the two fixed Edge sizes by the input's
+        # orientation (landscape/portrait); a (w, h) tuple keeps the fixed size.
+        if size == 'edge_auto':
+            from config import Config
+            edge_sizes = Config().edge_sizes
             h_orig, w_orig = image.shape[:2]
-            size = size_by_long_side((w_orig, h_orig), size)
+            size = edge_sizes['landscape'] if w_orig >= h_orig else edge_sizes['portrait']
         image = cv2.resize(image, size, interpolation=cv2.INTER_LINEAR)
     if color_type.lower() == 'rgb':
         image = Image.fromarray(cv2.cvtColor(image, cv2.COLOR_BGR2RGB)).convert('RGB')

@@ -73,12 +73,10 @@ def main(args):
             data_size = None
         elif args.resolution in ['config.size']:
             data_size = config.size
-        elif isinstance(args.resolution, str) and args.resolution.startswith('long'):
-            # 'longNNNN' -> scale the longer side to NNNN, keep the aspect ratio.
-            data_size = int(args.resolution[len('long'):])
         elif config.task == 'Edge' and args.resolution in ['default']:
-            # Edge inputs are mostly 4:3 / 3:4: default to long-side scaling.
-            data_size = config.edge_long_side
+            # Edge inputs are mostly 4:3 / 3:4: pick one of the two fixed sizes
+            # per image by its orientation (handled inside path_to_image).
+            data_size = 'edge_auto'
         else:
             data_size = [int(l) for l in args.resolution.split('x')]
     except Exception as e:
@@ -88,8 +86,8 @@ def main(args):
     # Build a readable tag of the resolution for the output folder name.
     if data_size is None:
         reso_tag = 'orig'
-    elif isinstance(data_size, int):
-        reso_tag = 'long{}'.format(data_size)
+    elif isinstance(data_size, str):
+        reso_tag = data_size
     else:
         reso_tag = 'x'.join([str(s) for s in data_size])
 
