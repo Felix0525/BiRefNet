@@ -73,12 +73,25 @@ def main(args):
             data_size = None
         elif args.resolution in ['config.size']:
             data_size = config.size
+        elif isinstance(args.resolution, str) and args.resolution.startswith('long'):
+            # 'longNNNN' -> scale the longer side to NNNN, keep the aspect ratio.
+            data_size = int(args.resolution[len('long'):])
+        elif config.task == 'Edge' and args.resolution in ['default']:
+            # Edge inputs are mostly 4:3 / 3:4: default to long-side scaling.
+            data_size = config.edge_long_side
         else:
             data_size = [int(l) for l in args.resolution.split('x')]
     except Exception as e:
         print(f"Exception: {type(e).__name__} at line {e.__traceback__.tb_lineno} of {__file__}: {e}")
         # default as the config.size.
         data_size = config.size
+    # Build a readable tag of the resolution for the output folder name.
+    if data_size is None:
+        reso_tag = 'orig'
+    elif isinstance(data_size, int):
+        reso_tag = 'long{}'.format(data_size)
+    else:
+        reso_tag = 'x'.join([str(s) for s in data_size])
 
     for testset in args.testsets.split('+'):
         print('>>>> Testset: {}...'.format(testset))
@@ -96,7 +109,7 @@ def main(args):
             model = model.to(device)
             inference(
                 model, data_loader_test=data_loader_test, pred_root=args.pred_root,
-                method='--'.join([w.rstrip('.pth') for w in weights.split(os.sep)[-2:]]) + '-reso_{}'.format('x'.join([str(s) for s in data_size])),
+                method='--'.join([w.rstrip('.pth') for w in weights.split(os.sep)[-2:]]) + '-reso_{}'.format(reso_tag),
                 testset=testset, device=config.device
             )
 

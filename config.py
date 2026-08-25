@@ -47,6 +47,10 @@ class Config():
         # Data settings
         if self.task == 'Edge':
             self.size = (1024, 1024)
+            # Edge inputs are mostly 4:3 / 3:4. Instead of squashing them into a
+            # square, scale the longer side to `edge_long_side` and keep the aspect
+            # ratio (short side is scaled proportionally and aligned to 32).
+            self.edge_long_side = 1280
         elif self.task == 'HandWrite':
             self.size = (512, 512)
         elif self.task == 'Bin':
