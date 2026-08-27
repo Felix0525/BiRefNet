@@ -20,6 +20,7 @@ from PyQt5.QtWidgets import (
     QAction,
     QApplication,
     QComboBox,
+    QDoubleSpinBox,
     QFileDialog,
     QHBoxLayout,
     QLabel,
@@ -131,6 +132,7 @@ class MaskCanvas(QWidget):
     dirty_changed = pyqtSignal(bool)
     cursor_info = pyqtSignal(str)
     tool_changed = pyqtSignal(str)
+    selection_changed = pyqtSignal(object)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -153,6 +155,10 @@ class MaskCanvas(QWidget):
         self.dirty = False
         self.drawing = False
         self.panning = False
+        self.selecting = False
+        self.selection_start = None
+        self.selection_current = None
+        self.selection_region = None
         self.last_image_point = None
         self.last_mouse_pos = None
         self.stroke_before = None
@@ -170,9 +176,21 @@ class MaskCanvas(QWidget):
         self.image_qimage = np_rgb_to_qimage(image)
         self.undo_stack = []
         self.redo_stack = []
+        self.clear_selection()
         self._set_dirty(False)
         self._refresh_mask_views()
         self.fit_to_window()
+
+    def replace_mask(self, mask):
+        """Replace the displayed mask while preserving zoom and a selected ROI."""
+        if self.image is None or mask.shape != self.image.shape[:2]:
+            raise ValueError("替换 mask 的尺寸与当前图片不一致")
+        self.mask = np.where(mask > 0, 255, 0).astype(np.uint8)
+        self.undo_stack = []
+        self.redo_stack = []
+        self._set_dirty(False)
+        self._refresh_mask_views()
+        self.update()
 
     def current_foreground_pixels(self):
         return int(np.count_nonzero(self.mask)) if self.mask is not None else 0
@@ -187,12 +205,33 @@ class MaskCanvas(QWidget):
         self._set_dirty(False)
 
     def set_tool(self, tool):
-        if tool not in {"brush", "eraser", "pan"}:
+        if tool not in {"brush", "eraser", "pan", "region"}:
             return
         self.tool = tool
         self.setCursor(Qt.OpenHandCursor if tool == "pan" else Qt.CrossCursor)
         self.tool_changed.emit(tool)
         self.update()
+
+    def clear_selection(self, emit_signal=True):
+        self.selecting = False
+        self.selection_start = None
+        self.selection_current = None
+        if self.selection_region is not None:
+            self.selection_region = None
+            if emit_signal:
+                self.selection_changed.emit(None)
+        self.update()
+
+    def current_selection(self):
+        return self.selection_region
+
+    def _normalize_selection(self, start, end):
+        height, width = self.mask.shape
+        left = max(0, min(width - 1, int(np.floor(min(start[0], end[0])))))
+        top = max(0, min(height - 1, int(np.floor(min(start[1], end[1])))))
+        right = max(left + 1, min(width, int(np.ceil(max(start[0], end[0])))))
+        bottom = max(top + 1, min(height, int(np.ceil(max(start[1], end[1])))))
+        return left, top, right, bottom
 
     def set_display_mode(self, mode):
         if mode in {"fill", "boundary", "mask"}:
@@ -308,6 +347,23 @@ class MaskCanvas(QWidget):
             overlay = self.overlay_qimage if self.display_mode == "fill" else self.boundary_qimage
             painter.drawImage(target, overlay)
 
+        selection = self.selection_region
+        if self.selecting and self.selection_start is not None and self.selection_current is not None:
+            selection = self._normalize_selection(
+                self.selection_start, self.selection_current
+            )
+        if selection is not None:
+            left, top, right, bottom = selection
+            selection_rect = QRectF(
+                self.offset.x() + left * self.scale,
+                self.offset.y() + top * self.scale,
+                (right - left) * self.scale,
+                (bottom - top) * self.scale,
+            )
+            painter.setPen(QPen(QColor(255, 180, 0), 2.0, Qt.DashLine))
+            painter.setBrush(QColor(255, 180, 0, 35))
+            painter.drawRect(selection_rect)
+
         if self.last_mouse_pos is not None and self.tool in {"brush", "eraser"}:
             point = self.image_point(self.last_mouse_pos)
             if point is not None:
@@ -355,6 +411,13 @@ class MaskCanvas(QWidget):
         point = self.image_point(event.pos())
         if point is None:
             return
+        if self.tool == "region":
+            if event.button() == Qt.LeftButton:
+                self.selecting = True
+                self.selection_start = point
+                self.selection_current = point
+                self.update()
+            return
         if event.modifiers() & Qt.AltModifier and event.button() == Qt.LeftButton:
             self._delete_component(int(point[0]), int(point[1]))
             return
@@ -383,6 +446,16 @@ class MaskCanvas(QWidget):
             x, y = int(point[0]), int(point[1])
             value = int(self.mask[y, x]) if self.mask is not None else 0
             self.cursor_info.emit("x={}, y={}, mask={}".format(x, y, value))
+        if self.selecting and point is not None:
+            self.selection_current = point
+            left, top, right, bottom = self._normalize_selection(
+                self.selection_start, self.selection_current
+            )
+            self.cursor_info.emit(
+                "框选区域：x=[{}, {})，y=[{}, {})".format(left, right, top, bottom)
+            )
+            self.update()
+            return
         if self.drawing and point is not None and self.last_image_point is not None:
             erase = bool(event.buttons() & Qt.RightButton) or self.tool == "eraser"
             self._draw_segment(self.last_image_point, point, erase)
@@ -393,6 +466,20 @@ class MaskCanvas(QWidget):
         if self.panning:
             self.panning = False
             self.setCursor(Qt.OpenHandCursor if self.tool == "pan" else Qt.CrossCursor)
+            return
+        if self.selecting:
+            self.selecting = False
+            point = self.image_point(event.pos())
+            if point is not None:
+                self.selection_current = point
+            if self.selection_start is not None and self.selection_current is not None:
+                self.selection_region = self._normalize_selection(
+                    self.selection_start, self.selection_current
+                )
+                self.selection_changed.emit(self.selection_region)
+            self.selection_start = None
+            self.selection_current = None
+            self.update()
             return
         if self.drawing:
             self.drawing = False
@@ -542,7 +629,7 @@ class SparseMaskEditor(QMainWindow):
         self.setStyleSheet(
             "QMainWindow, QWidget { color: #202124; }"
             "QToolBar, QStatusBar { background: #f3f4f6; color: #202124; }"
-            "QToolButton, QPushButton, QComboBox, QSpinBox, QLineEdit {"
+            "QToolButton, QPushButton, QComboBox, QSpinBox, QDoubleSpinBox, QLineEdit {"
             " color: #202124; background: #ffffff; border: 1px solid #b8bdc5;"
             " border-radius: 3px; padding: 4px 7px; }"
             "QToolButton:hover, QPushButton:hover { background: #e8f3ff; }"
@@ -554,6 +641,7 @@ class SparseMaskEditor(QMainWindow):
         self.canvas.dirty_changed.connect(self._update_title)
         self.canvas.cursor_info.connect(self._show_cursor_info)
         self.canvas.tool_changed.connect(self._sync_tool_combo)
+        self.canvas.selection_changed.connect(self._selection_changed)
         self._build_ui()
         self._install_shortcuts()
 
@@ -592,6 +680,7 @@ class SparseMaskEditor(QMainWindow):
         self.tool_combo.addItem("增加前景 (B)", "brush")
         self.tool_combo.addItem("擦除前景 (E/右键)", "eraser")
         self.tool_combo.addItem("平移 (V)", "pan")
+        self.tool_combo.addItem("框选推理区域 (R)", "region")
         self.tool_combo.currentIndexChanged.connect(
             lambda _: self.canvas.set_tool(self.tool_combo.currentData())
         )
@@ -654,12 +743,28 @@ class SparseMaskEditor(QMainWindow):
             int(self.settings.value("inference_width", 1088))
         )
         model_layout.addWidget(self.inference_width_spin)
-        self.generate_mask_button = QPushButton("生成并替换 mask")
+        model_layout.addWidget(QLabel("阈值："))
+        self.threshold_spin = QDoubleSpinBox()
+        self.threshold_spin.setRange(0.0, 1.0)
+        self.threshold_spin.setDecimals(4)
+        self.threshold_spin.setSingleStep(0.05)
+        self.threshold_spin.setValue(float(self.settings.value("threshold", 0.5)))
+        model_layout.addWidget(self.threshold_spin)
+        self.generate_mask_button = QPushButton("全图生成并替换")
         self.generate_mask_button.setToolTip(
-            "按宽度无重叠切块，末块右侧补白；概率严格 > 0.5，不做后处理"
+            "按宽度无重叠切块，末块右侧补白；按当前阈值二值化，不做后处理"
         )
         self.generate_mask_button.clicked.connect(self.generate_and_replace_mask)
         model_layout.addWidget(self.generate_mask_button)
+        self.region_mask_button = QPushButton("框选区域推理")
+        self.region_mask_button.setEnabled(False)
+        self.region_mask_button.setToolTip("先选择“框选推理区域 (R)”，再在图片上拖出矩形")
+        self.region_mask_button.clicked.connect(self.generate_selected_region)
+        model_layout.addWidget(self.region_mask_button)
+        self.clear_region_button = QPushButton("清除框选")
+        self.clear_region_button.setEnabled(False)
+        self.clear_region_button.clicked.connect(self.canvas.clear_selection)
+        model_layout.addWidget(self.clear_region_button)
         layout.addLayout(model_layout)
 
         info_layout = QHBoxLayout()
@@ -707,6 +812,8 @@ class SparseMaskEditor(QMainWindow):
             ("B", lambda: self.canvas.set_tool("brush")),
             ("E", lambda: self.canvas.set_tool("eraser")),
             ("V", lambda: self.canvas.set_tool("pan")),
+            ("R", lambda: self.canvas.set_tool("region")),
+            ("Escape", self.canvas.clear_selection),
             ("1", lambda: self._set_display_index(0)),
             ("2", lambda: self._set_display_index(1)),
             ("3", lambda: self._set_display_index(2)),
@@ -738,6 +845,18 @@ class SparseMaskEditor(QMainWindow):
             self.tool_combo.setCurrentIndex(index)
             self.tool_combo.blockSignals(False)
 
+    def _selection_changed(self, region):
+        has_region = region is not None
+        self.region_mask_button.setEnabled(has_region and self.pending_inference is None)
+        self.clear_region_button.setEnabled(has_region and self.pending_inference is None)
+        if region is None:
+            self.region_mask_button.setText("框选区域推理")
+            return
+        left, top, right, bottom = region
+        self.region_mask_button.setText(
+            "框选推理 {}×{}".format(right - left, bottom - top)
+        )
+
     def browse_model(self):
         current = self.model_path_edit.text().strip()
         start_dir = str(Path(current).parent) if current else str(Path.cwd())
@@ -760,13 +879,31 @@ class SparseMaskEditor(QMainWindow):
 
     def _set_inference_busy(self, busy, text=None):
         self.generate_mask_button.setEnabled(not busy)
+        self.region_mask_button.setEnabled(
+            not busy and self.canvas.current_selection() is not None
+        )
+        self.clear_region_button.setEnabled(
+            not busy and self.canvas.current_selection() is not None
+        )
         self.model_path_edit.setEnabled(not busy)
         self.model_type_combo.setEnabled(not busy)
         self.inference_height_spin.setEnabled(not busy)
         self.inference_width_spin.setEnabled(not busy)
-        self.generate_mask_button.setText(text if busy and text else "生成并替换 mask")
+        self.threshold_spin.setEnabled(not busy)
+        self.canvas.setEnabled(not busy)
+        self.generate_mask_button.setText(text if busy and text else "全图生成并替换")
 
     def generate_and_replace_mask(self):
+        self._request_generation(region=None)
+
+    def generate_selected_region(self):
+        region = self.canvas.current_selection()
+        if region is None:
+            QMessageBox.information(self, "未框选区域", "请先选择“框选推理区域 (R)”并拖出矩形。")
+            return
+        self._request_generation(region=region)
+
+    def _request_generation(self, region):
         model_text = self.model_path_edit.text().strip()
         if not model_text:
             QMessageBox.information(self, "缺少模型", "请先选择模型路径。")
@@ -790,10 +927,19 @@ class SparseMaskEditor(QMainWindow):
         stem, image_path, _ = self.pairs[self.index]
         target = self.output_path(stem)
         if self.canvas.dirty or target.exists():
+            if region is None:
+                replacement_text = "模型结果将替换整张 mask：\n{}".format(target)
+            else:
+                left, top, right, bottom = region
+                replacement_text = (
+                    "模型结果只替换框选区域 x=[{}, {})，y=[{}, {})：\n{}".format(
+                        left, right, top, bottom, target
+                    )
+                )
             answer = QMessageBox.question(
                 self,
                 "确认替换当前 mask",
-                "模型结果将替换：\n{}\n\n原始 gt 不会修改。是否继续？".format(target),
+                "{}\n\n原始 gt 不会修改。是否继续？".format(replacement_text),
                 QMessageBox.Yes | QMessageBox.No,
                 QMessageBox.No,
             )
@@ -804,15 +950,21 @@ class SparseMaskEditor(QMainWindow):
         self.settings.setValue("model_type", self.model_type_combo.currentData())
         self.settings.setValue("inference_height", self.inference_height_spin.value())
         self.settings.setValue("inference_width", self.inference_width_spin.value())
+        self.settings.setValue("threshold", self.threshold_spin.value())
 
         self.output_dir.mkdir(parents=True, exist_ok=True)
-        temporary = self.output_dir / ".{}.model-preview.png".format(stem)
+        preview_kind = "region" if region is not None else "full"
+        temporary = self.output_dir / ".{}.{}.model-preview.png".format(
+            stem, preview_kind
+        )
         self.pending_inference = {
             "stem": stem,
             "index": self.index,
             "image": str(image_path),
             "temporary": temporary,
             "target": target,
+            "region": region,
+            "threshold": float(self.threshold_spin.value()),
         }
         key = self._current_inference_key()
         self._set_inference_busy(True, "准备模型…")
@@ -877,13 +1029,19 @@ class SparseMaskEditor(QMainWindow):
             "command": "infer",
             "image": self.pending_inference["image"],
             "output": str(self.pending_inference["temporary"]),
+            "threshold": self.pending_inference["threshold"],
+            "region": self.pending_inference["region"],
         }
         self.inference_process.write(
             (json.dumps(request, ensure_ascii=False) + "\n").encode("utf-8")
         )
         self._set_inference_busy(True, "推理中…")
         self.statusBar().showMessage(
-            "正在生成 {} 的 mask…".format(self.pending_inference["stem"])
+            "正在生成 {} 的{}mask，阈值 {:.4f}…".format(
+                self.pending_inference["stem"],
+                "框选区域 " if self.pending_inference["region"] is not None else "全图 ",
+                self.pending_inference["threshold"],
+            )
         )
 
     def _read_inference_stdout(self, process):
@@ -947,8 +1105,17 @@ class SparseMaskEditor(QMainWindow):
             return
         try:
             with Image.open(str(pending["image"])) as opened:
-                expected_shape = (opened.height, opened.width)
-            mask = load_binary_mask(pending["temporary"], expected_shape)
+                image_shape = (opened.height, opened.width)
+            region = pending["region"]
+            if region is None:
+                mask = load_binary_mask(pending["temporary"], image_shape)
+            else:
+                left, top, right, bottom = region
+                region_mask = load_binary_mask(
+                    pending["temporary"], (bottom - top, right - left)
+                )
+                mask = self.canvas.mask.copy()
+                mask[top:bottom, left:right] = region_mask
             save_mask_atomic(mask, pending["target"])
         except Exception as error:
             self._fail_pending_inference("结果校验或保存失败：{}".format(error))
@@ -963,7 +1130,7 @@ class SparseMaskEditor(QMainWindow):
         self.pending_inference = None
         self._set_inference_busy(False)
         if self.pairs[self.index][0].lower() == stem.lower():
-            self.canvas.set_data(self.canvas.image, mask)
+            self.canvas.replace_mask(mask)
             self.original_foreground = int(np.count_nonzero(mask))
             self.file_label.setText("{}  ·  模型生成输出".format(stem))
             self._update_progress()
@@ -1089,6 +1256,9 @@ class SparseMaskEditor(QMainWindow):
         return True
 
     def navigate(self, delta):
+        if self.pending_inference is not None:
+            self.statusBar().showMessage("模型推理中，暂不能切换图片", 2500)
+            return
         if not self.maybe_leave_current():
             return
         new_index = self.index + delta
@@ -1099,6 +1269,9 @@ class SparseMaskEditor(QMainWindow):
         self.load_current()
 
     def save_current(self):
+        if self.pending_inference is not None:
+            self.statusBar().showMessage("模型推理中，暂不能保存", 2500)
+            return False
         stem = self.pairs[self.index][0]
         target = self.output_path(stem)
         try:
@@ -1120,6 +1293,9 @@ class SparseMaskEditor(QMainWindow):
             self.load_current()
 
     def jump_to_text(self):
+        if self.pending_inference is not None:
+            self.statusBar().showMessage("模型推理中，暂不能切换图片", 2500)
+            return
         text = self.jump_edit.text().strip()
         if not text:
             return
