@@ -48,11 +48,11 @@ class Config():
         if self.task == 'Edge':
             # Edge inputs are mostly 4:3 / 3:4. Instead of squashing them into a
             # square, use two fixed aspect-ratio-preserving sizes:
-            #   landscape (1280, 960) and portrait (960, 1280).
+            #   landscape (960, 720) and portrait (720, 960).
             # Training picks one per batch by `edge_landscape_prob` (prob. of
             # landscape); inference picks by the input's orientation.
-            self.size = (1280, 960)     # wid, hei. Default/landscape.
-            self.edge_sizes = {'landscape': (1280, 960), 'portrait': (960, 1280)}
+            self.size = (960, 720)      # wid, hei. Default/landscape.
+            self.edge_sizes = {'landscape': (960, 720), 'portrait': (720, 960)}
             self.edge_landscape_prob = 0.6
         elif self.task == 'HandWrite':
             self.size = (512, 512)
